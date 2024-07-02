@@ -1,0 +1,96 @@
+################# LEITURA BASE DE DADOS
+
+## Quantidade de linhas: 36358536
+SELECT count (*) FROM `rj-cetrio.desafio.readings_2024_06`
+
+## Quantidade de Placas: 7984610
+SELECT count (distinct (placa)) FROM `rj-cetrio.desafio.readings_2024_06`
+
+## Quais são os tipos de Veiculos: 4
+select count(distinct( tipoveiculo))  FROM `rj-cetrio.desafio.readings_2024_06` 
+
+## Quantidade de Empresas: 3
+SELECT count(distinct empresa) FROM `rj-cetrio.desafio.readings_2024_06`
+
+## Quantidade de Cameras: 1421
+SELECT count (distinct (camera_numero)) FROM `rj-cetrio.desafio.readings_2024_06`
+
+### Validação se tem apenas um endereço para cada camera: ESTÁ CORRETO
+SELECT count(*) from (select distinct camera_numero, camera_latitude, camera_longitude FROM `rj-cetrio.desafio.readings_2024_06`)
+### Validação se tem apenas uma empresa para cada camera: ESTÁ CORRETO
+SELECT count(*) from (select distinct empresa, camera_numero FROM `rj-cetrio.desafio.readings_2024_06`)
+
+## As empresas dividewm bem as cameras: 269, 193, 959
+SELECT * from (select empresa-, count(distinct( camera_numero)) as quantidade_tipos_de_veiculo FROM `rj-cetrio.desafio.readings_2024_06`  GROUP BY empresa)
+
+## Tempo da base de dados: 2024-06-06 até 2024-06-13
+SELECT min(datahora_captura), min(datahora), max(datahora_captura), max(datahora) FROM `rj-cetrio.desafio.readings_2024_06`
+
+## Velocidade: Entre 0 a 255.
+select max(velocidade), min(velocidade) FROM `rj-cetrio.desafio.readings_2024_06`
+
+## Quantidade de Nulos: Apenas na Coluna datahora_captura: 1816325
+SELECT 
+  SUM(CASE WHEN datahora IS NULL THEN 1 ELSE 0 END) AS nulos_datahora,
+  SUM(CASE WHEN datahora_captura IS NULL THEN 1 ELSE 0 END) AS nulos_datahora_captura,
+  SUM(CASE WHEN placa IS NULL THEN 1 ELSE 0 END) AS nulos_placa,
+  SUM(CASE WHEN empresa IS NULL THEN 1 ELSE 0 END) AS nulos_empresa,
+  SUM(CASE WHEN tipoveiculo IS NULL THEN 1 ELSE 0 END) AS nulos_tipoveiculo,
+  SUM(CASE WHEN velocidade IS NULL THEN 1 ELSE 0 END) AS nulos_velocidade,
+  SUM(CASE WHEN camera_numero IS NULL THEN 1 ELSE 0 END) AS nulos_camera_numero,
+  SUM(CASE WHEN camera_latitude IS NULL THEN 1 ELSE 0 END) AS nulos_camera_latitude,
+  SUM(CASE WHEN camera_longitude IS NULL THEN 1 ELSE 0 END) AS nulos_camera_longitude
+FROM 
+  `rj-cetrio.desafio.readings_2024_06`
+
+## Exploração datahora_captura: Aconteceram no mesmo dia 24-06-06, mas em horários diferentes.
+SELECT distinct (DATE(datahora)) from `rj-cetrio.desafio.readings_2024_06` where datahora_captura IS NULL
+SELECT EXTRACT(HOUR FROM datahora), count(*) from `rj-cetrio.desafio.readings_2024_06` where datahora_captura IS NULL group by EXTRACT(HOUR FROM datahora)
+
+################# INCONSISTÊNCIAS
+
+INCONSISTÊNCIA 1: 
+## Não existe uma chave id, então foi utilzado datahora, camera_numero, placa como chave_unica resultando em 36270755. Este valor, pode significar que tem muitas placas clonadas, mas provavelmente é um erro, porque teria muitas placas clonadas no mesmo horário e local.
+SELECT count(*) from (select distinct datahora, camera_numero, placa FROM `rj-cetrio.desafio.readings_2024_06`)
+
+INCONSISTÊNCIA 2: 
+###  Os valores da Velocidade são estranhos. Verificando se era somente outliers e se era em todas as cameras, não aparenta um padrão.
+select * from (select camera_numero,count(*) as quantidade FROM `rj-cetrio.desafio.readings_2024_06` where velocidade >= 200 group by (camera_numero)) order by quantidade desc
+select * from (select camera_numero,count(*) as quantidade FROM `rj-cetrio.desafio.readings_2024_06` where velocidade <= 10 group by (camera_numero)) order by quantidade desc
+
+INCONSISTÊNCIA 3: 
+## O que significa a datahora e datahora_captura? Não existe um padrão de alguma camera gravar antes ou depois.
+SELECT count (distinct (camera_numero))  FROM `rj-cetrio.desafio.readings_2024_06` WHERE datahora_captura <= datahora
+SELECT count (distinct (camera_numero))  FROM `rj-cetrio.desafio.readings_2024_06` WHERE datahora_captura = datahora
+SELECT count (distinct (camera_numero))  FROM `rj-cetrio.desafio.readings_2024_06` WHERE datahora_captura < datahora
+
+## Existe uma diferença muito grande entre o datahora e datahora_captura
+SELECT *  from `rj-cetrio.desafio.readings_2024_06` where (DATE(datahora)) != (DATE(datahora_captura)) # Existe a chance de ser na madrugada, mas não é só esse o caso.
+SELECT MAX(TEMPO) FROM (select datahora_captura, datahora, (datahora_captura - datahora) as tempo from `rj-cetrio.desafio.readings_2024_06` WHERE datahora_captura > datahora AND datahora_captura IS NOT NULL)
+select count(*) from (select camera_numero,(datahora_captura - datahora) as tempo  from `rj-cetrio.desafio.readings_2024_06` where (DATE(datahora))!= (DATE(datahora_captura)) AND (DATE(datahora_captura))>= ((DATE(datahora)) +2) AND  datahora_captura IS NOT NULL)
+
+## Nao está acontecendo em apenas uma camera.
+select distinct camera_numero from (select camera_numero,(datahora_captura - datahora) as tempo  from `rj-cetrio.desafio.readings_2024_06` where (DATE(datahora))!= (DATE(datahora_captura)) AND (DATE(datahora_captura))>= ((DATE(datahora)) +2) AND  datahora_captura IS NOT NULL)
+
+################# PLACAS CLONADAS
+
+PRIMEIRA HIPOTESE:
+## A placa é unica para todos os tipos de veiculo? NÃO, valor mais alto(8496866) que quantidade de placas (7984610)
+SELECT count(*) from (select distinct placa, tipoveiculo FROM `rj-cetrio.desafio.readings_2024_06`)
+SELECT * from (select placa, count(distinct( tipoveiculo)) as quantidade_tipos_de_veiculo FROM `rj-cetrio.desafio.readings_2024_06`  GROUP BY placa) WHERE  quantidade_tipos_de_veiculo> 1  order by quantidade_tipos_de_veiculo DESC
+
+SEGUNDA HIPOTESE:
+## A mesma placa rodar no mesmo dia, horário e local: 
+SELECT * FROM ( SELECT placa, tipoveiculo,camera_numero, DATE(datahora), COUNT(*) AS QTDE FROM `rj-cetrio.desafio.readings_2024_06` GROUP BY placa,camera_numero, empresa, tipoveiculo, DATE(datahora)) WHERE QTDE> 1 ORDER BY QTDE DESC
+SELECT * FROM ( SELECT placa, tipoveiculo,camera_numero, DATE(datahora),EXTRACT(HOUR FROM datahora), COUNT(*) AS QTDE FROM `rj-cetrio.desafio.readings_2024_06` GROUP BY placa,camera_numero, empresa, tipoveiculo, DATE(datahora),EXTRACT(HOUR FROM datahora)) WHERE QTDE> 50 ORDER BY QTDE DESC
+SELECT * from (SELECT placa, tipoveiculo, data,camera_numero, sum(QTDE) as total_dia FROM ( SELECT placa, tipoveiculo,camera_numero, DATE(datahora) as data,EXTRACT(HOUR FROM datahora), COUNT(*) AS QTDE FROM `rj-cetrio.desafio.readings_2024_06` GROUP BY placa,camera_numero, tipoveiculo, DATE(datahora),EXTRACT(HOUR FROM datahora)) group by placa,tipoveiculo, data,camera_numero) WHERE total_dia> 100 ORDER BY total_dia DESC
+
+TERCEIRA HIPOTESE:
+## A mesma placa rodar no mesmo dia, horário e desconsiderando se os locais são iguais ou diferentes: 
+SELECT * FROM ( SELECT placa, tipoveiculo, DATE(datahora), COUNT(*) AS QTDE FROM `rj-cetrio.desafio.readings_2024_06` GROUP BY placa, empresa, tipoveiculo, DATE(datahora)) WHERE QTDE> 1 ORDER BY QTDE DESC
+SELECT * FROM ( SELECT placa, tipoveiculo, DATE(datahora),EXTRACT(HOUR FROM datahora), COUNT(*) AS QTDE FROM `rj-cetrio.desafio.readings_2024_06` GROUP BY placa, empresa, tipoveiculo, DATE(datahora),EXTRACT(HOUR FROM datahora)) WHERE QTDE> 50 ORDER BY QTDE DESC
+SELECT * from (SELECT placa, tipoveiculo, data, sum(QTDE) as total_dia FROM ( SELECT placa, tipoveiculo, DATE(datahora) as data,EXTRACT(HOUR FROM datahora), COUNT(*) AS QTDE FROM `rj-cetrio.desafio.readings_2024_06` GROUP BY placa, tipoveiculo, DATE(datahora),EXTRACT(HOUR FROM datahora)) group by placa,tipoveiculo, data) WHERE total_dia> 100 ORDER BY total_dia DESC
+
+QUARTA HIPOTESE:
+## A mesma placa rodar no mesmo dia, horário e mas em locais diferentes: 
+SELECT placa, tipoveiculo, SUM (QTDE) FROM ( SELECT placa, tipoveiculo, DATE(datahora),EXTRACT(HOUR FROM datahora), COUNT(DISTINCT camera_numero) AS QTDE FROM `rj-cetrio.desafio.readings_2024_06`  GROUP BY placa, tipoveiculo, DATE(datahora), EXTRACT(HOUR FROM datahora)) WHERE QTDE> 10 GROUP BY placa, tipoveiculo ORDER BY SUM (QTDE) DESC
